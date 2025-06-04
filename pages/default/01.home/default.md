@@ -1,11 +1,13 @@
 ---
-title: Welcome to Pebble CMS
-template: default
+title: Welcome to Our Site
+template: modular
+menu: Home
 ---
 
-# Welcome to Pebble CMS
+# Welcome to Our Site
 
-This is a lightweight, flat-file content management system built with PHP. It's designed to be simple, fast, and easy to use.
+This is a modular homepage that demonstrates the power of modular pages in our CMS.
+Each section below is a separate module that can be managed independently.
 
 ## Features
 

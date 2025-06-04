@@ -3,10 +3,6 @@
  * Pebble CMS - A lightweight flat-file CMS
  */
 
-// Enable error reporting
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
 // Define base paths
 define('ROOT_DIR', __DIR__);
 define('CORE_DIR', ROOT_DIR . '/core');
@@ -14,36 +10,92 @@ define('PAGES_DIR', ROOT_DIR . '/pages');
 define('THEMES_DIR', ROOT_DIR . '/themes');
 define('CONFIG_DIR', ROOT_DIR . '/config');
 
-// Add site configuration
-$site = 'default'; // Default site if none specified
-if (isset($_SERVER['HTTP_HOST'])) {
-    // You can customize this logic to determine the site based on domain
-    $host = $_SERVER['HTTP_HOST'];
-    // Example: if domain is site1.example.com, use 'site1' as the site name
-    $site = explode('.', $host)[0];
+// Environment detection
+$isProduction = getenv('APP_ENV') === 'production';
+$isCli = (php_sapi_name() === 'cli');
+
+// Error reporting based on environment
+if ($isProduction) {
+    error_reporting(0);
+    ini_set('display_errors', 0);
+    ini_set('log_errors', 1);
+    ini_set('error_log', ROOT_DIR . '/logs/error.log');
+} else {
+    error_reporting(E_ALL);
+    ini_set('display_errors', 1);
 }
 
-// Simple autoloader for core classes
-spl_autoload_register(function ($class) {
-    $file = CORE_DIR . '/' . str_replace('\\', '/', $class) . '.php';
-    if (file_exists($file)) {
-        require $file;
+// Initialize API Authentication
+require_once CORE_DIR . '/ApiAuth.php';
+require_once CORE_DIR . '/Content.php';
+$apiAuth = new ApiAuth();
+
+// Get URI - handle both CLI and web contexts
+$uri = '';
+if (!$isCli) {
+    // Web context
+    if (isset($_SERVER['REQUEST_URI'])) {
+        $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+        $uri = trim($uri, '/');
     }
-});
 
-// Load configuration
-$config = [];
-if (file_exists(CONFIG_DIR . '/site.yaml')) {
-    $config = YamlParser::parse(file_get_contents(CONFIG_DIR . '/site.yaml'));
+    // Set security headers BEFORE any output
+    header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';");
+    header("X-Frame-Options: DENY");
+    header("X-Content-Type-Options: nosniff");
+    header("X-XSS-Protection: 1; mode=block");
+    if ($isProduction) {
+        header("Strict-Transport-Security: max-age=31536000; includeSubDomains");
+    }
+
+    // Get API key from request
+    $apiKey = null;
+    if (isset($_SERVER['HTTP_X_API_KEY'])) {
+        $apiKey = $_SERVER['HTTP_X_API_KEY'];
+    } elseif (isset($_GET['api_key'])) {
+        $apiKey = $_GET['api_key'];
+    }
+
+    // Public routes that don't require API key
+    $publicRoutes = ['/', '/health', '/docs'];
+
+    // Check if the current route is public
+    $isPublicRoute = in_array('/' . $uri, $publicRoutes);
+
+    // Validate API key for non-public routes
+    if (!$isPublicRoute) {
+        if (!$apiKey || !$apiAuth->validateApiKey($apiKey)) {
+            header('HTTP/1.0 401 Unauthorized');
+            header('Content-Type: application/json');
+            echo json_encode([
+                'error' => 'Invalid or missing API key',
+                'status' => 'error'
+            ]);
+            exit;
+        }
+        
+        // Update last used timestamp for the API key
+        $apiAuth->updateLastUsed($apiKey);
+        
+        // Check permissions if needed
+        $permissions = $apiAuth->getApiKeyPermissions($apiKey);
+        if (!in_array('read', $permissions)) {
+            header('HTTP/1.0 403 Forbidden');
+            echo json_encode([
+                'error' => 'Insufficient permissions',
+                'status' => 'error'
+            ]);
+            exit;
+        }
+    }
 }
-
-// Basic routing
-$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-$uri = trim($uri, '/');
 
 // If we're at the root URL, return list of sites and pages
 if (empty($uri)) {
-    header('Content-Type: application/json');
+    // Set content type BEFORE any output
+    if (!$isCli) {
+        header('Content-Type: application/json');
+    }
     
     $sites = [];
     $siteDirs = glob(PAGES_DIR . '/*', GLOB_ONLYDIR);
@@ -106,10 +158,26 @@ if (empty($uri)) {
         ];
     }
     
-    echo json_encode([
+    $response = [
         'sites' => $sites,
         'total_sites' => count($sites)
-    ], JSON_PRETTY_PRINT);
+    ];
+    
+    if ($isCli) {
+        // In CLI, just print the sites
+        foreach ($sites as $siteName => $siteInfo) {
+            echo "Site: $siteName\n";
+            echo "URL: {$siteInfo['url']}\n";
+            echo "Pages:\n";
+            foreach ($siteInfo['pages'] as $page) {
+                echo "  - $page\n";
+            }
+            echo "\n";
+        }
+    } else {
+        // In web context, output JSON
+        echo json_encode($response, JSON_PRETTY_PRINT);
+    }
     exit;
 }
 
@@ -240,14 +308,17 @@ if (!file_exists($pageFile)) {
     error_log("Fallback to default site, checking: $pageFile");
     if (!file_exists($pageFile)) {
         header("HTTP/1.0 404 Not Found");
-        echo "Page not found";
+        header('Content-Type: application/json');
+        echo json_encode([
+            'error' => 'Page not found',
+            'status' => 'error'
+        ]);
         exit;
     }
 }
 
 // Parse the content
 $content = new Content($pageFile);
-// TODO: Implement template rendering
 
 // Set JSON content type header
 header('Content-Type: application/json');
@@ -255,12 +326,44 @@ header('Content-Type: application/json');
 // Create response array
 $response = [
     'title' => $content->get('title', 'Untitled'),
-    'content' => $content->getContent(),
+    'template' => $content->get('template', 'default'),
     'frontmatter' => $content->getFrontmatter()
 ];
 
-// Output JSON
-echo json_encode($response, JSON_PRETTY_PRINT);
+// Handle modular pages differently
+if ($content->isModular()) {
+    $response['type'] = 'modular';
+    $response['modules'] = array_map(function($module) {
+        return [
+            'title' => $module->get('title', 'Untitled'),
+            'content' => $module->getContent(),
+            'frontmatter' => $module->getFrontmatter(),
+            'template' => $module->get('template', 'default')
+        ];
+    }, $content->getModules());
+} else {
+    $response['type'] = 'standard';
+    $response['content'] = $content->getContent();
+}
+
+// Modify the JSON response to include rate limit information
+$response['rate_limit'] = [
+    'remaining' => $apiAuth->getRemainingRequests($apiKey),
+    'reset' => $apiAuth->getRateLimitReset($apiKey)
+];
+
+// Add rate limit headers
+header('X-RateLimit-Limit: ' . $apiAuth->getRateLimit());
+header('X-RateLimit-Remaining: ' . $apiAuth->getRemainingRequests($apiKey));
+header('X-RateLimit-Reset: ' . $apiAuth->getRateLimitReset($apiKey));
+
+// Secure JSON output
+function secureJsonEncode($data) {
+    return json_encode($data, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
+}
+
+// Use secure JSON encoding
+echo secureJsonEncode($response);
 
 
 

@@ -7,3 +7,4 @@ context.md
 
 pages/*
 !pages/default/
+config/api_keys.json
