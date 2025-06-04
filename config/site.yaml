@@ -1,0 +1,14 @@
+site:
+  title: Pebble CMS
+  description: A lightweight flat-file CMS
+  author: Your Name
+  theme: default
+  debug: true
+
+markdown:
+  extra: true
+  breaks: true
+
+twig:
+  cache: false
+  debug: true 
