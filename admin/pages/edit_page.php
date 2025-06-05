@@ -38,6 +38,9 @@ if (!file_exists($fullPath) || !is_readable($fullPath)) {
 $content = new Content($fullPath);
 $frontmatter = $content->getFrontmatter();
 $markdownContent = $content->getContent();
+
+$isModule = isset($frontmatter['type']) && $frontmatter['type'] === 'module';
+
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action']) && $_POST['action'] === 'save') {
@@ -48,6 +51,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach ($_POST['frontmatter'] as $key => $value) {
             if (!empty($value)) {
                 $newFrontmatter[$key] = $value;
+            }
+        }
+        
+        // Handle modules if this is a modular page
+        if (isset($_POST['modules']) && is_array($_POST['modules'])) {
+            $modules = [];
+            foreach ($_POST['modules'] as $module) {
+                if (!empty($module['title']) && !empty($module['content'])) {
+                    $modules[] = [
+                        'title' => $module['title'],
+                        'content' => $module['content'],
+                        'template' => $module['template'] ?? 'default',
+                        'order' => $module['order'] ?? 0
+                    ];
+                }
+            }
+            if (!empty($modules)) {
+                $newFrontmatter['modules'] = $modules;
             }
         }
         
@@ -94,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     <?php endif; ?>
 
-    <form method="POST" class="space-y-6">
+    <form id="edit-form" method="POST" class="space-y-6">
         <input type="hidden" name="action" value="save">
         
         <!-- Frontmatter Fields -->
@@ -120,27 +141,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                 </div>
                 <div>
+                    <label for="frontmatter[type]" class="block text-sm font-medium text-gray-700">Page Type</label>
+                    <select name="frontmatter[type]" id="frontmatter[type]" 
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            onchange="toggleModuleFields(this.value)">
+                        <option value="page" <?php echo !$isModule ? 'selected' : ''; ?>>Standard Page</option>
+                        <option value="module" <?php echo $isModule ? 'selected' : ''; ?>>Module</option>
+                    </select>
+                </div>
+                <div>
                     <label for="frontmatter[order]" class="block text-sm font-medium text-gray-700">Order</label>
                     <input type="number" name="frontmatter[order]" id="frontmatter[order]" 
-                           value="<?php echo htmlspecialchars($frontmatter['order'] ?? '9999'); ?>"
+                           value="<?php echo htmlspecialchars($frontmatter['order'] ?? '0'); ?>"
                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                 </div>
             </div>
         </div>
 
-        <!-- Markdown Editor -->
+        <!-- Main Content -->
         <div>
-            <label for="content" class="block text-sm font-medium text-gray-700 mb-2">Content</label>
-            <textarea name="content" id="content" class="hidden"><?php echo htmlspecialchars($markdownContent); ?></textarea>
+            <label for="content" class="block text-sm font-medium text-gray-700">Content</label>
+            <textarea name="content" id="content" rows="10" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"><?php echo htmlspecialchars($markdownContent); ?></textarea>
         </div>
 
-        <div class="flex justify-end space-x-2">
-            <button type="button" onclick="window.location.href='index.php'" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                Cancel
-            </button>
-            <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
-                <i class="fas fa-save mr-2"></i> Save Changes
-            </button>
+        <!-- Modules Section (only shown for modular pages) -->
+        <div id="modules-section" class="<?php echo $isModule ? '' : 'hidden'; ?>">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-medium text-gray-900">Modules</h2>
+                <button type="button" onclick="addModule()" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <i class="fas fa-plus mr-1"></i> Add Module
+                </button>
+            </div>
+            
+            <div id="modules-container" class="space-y-4">
+                <?php 
+                if (isset($frontmatter['modules']) && is_array($frontmatter['modules'])) {
+                    foreach ($frontmatter['modules'] as $index => $module): 
+                ?>
+                    <div class="module-item bg-gray-50 p-4 rounded-lg">
+                        <div class="flex justify-between items-start mb-4">
+                            <h3 class="text-md font-medium text-gray-900">Module <?php echo $index + 1; ?></h3>
+                            <button type="button" onclick="removeModule(this)" class="text-red-600 hover:text-red-900">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-1 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Title</label>
+                                <input type="text" name="modules[<?php echo $index; ?>][title]" 
+                                       value="<?php echo htmlspecialchars($module['title']); ?>"
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Template</label>
+                                <input type="text" name="modules[<?php echo $index; ?>][template]" 
+                                       value="<?php echo htmlspecialchars($module['template'] ?? 'default'); ?>"
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Order</label>
+                                <input type="number" name="modules[<?php echo $index; ?>][order]" 
+                                       value="<?php echo htmlspecialchars($module['order'] ?? '0'); ?>"
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Content</label>
+                                <textarea name="modules[<?php echo $index; ?>][content]" rows="4"
+                                          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"><?php echo htmlspecialchars($module['content']); ?></textarea>
+                            </div>
+                        </div>
+                    </div>
+                <?php 
+                    endforeach;
+                }
+                ?>
+            </div>
         </div>
     </form>
 </div>
@@ -215,6 +290,68 @@ document.addEventListener('keydown', function(e) {
         hidePreviewModal();
     }
 });
+
+// Module handling functions
+function toggleModuleFields(type) {
+    const modulesSection = document.getElementById('modules-section');
+    modulesSection.classList.toggle('hidden', type !== 'module');
+}
+
+function addModule() {
+    const container = document.getElementById('modules-container');
+    const moduleCount = container.children.length;
+    
+    const moduleHtml = `
+        <div class="module-item bg-gray-50 p-4 rounded-lg">
+            <div class="flex justify-between items-start mb-4">
+                <h3 class="text-md font-medium text-gray-900">Module ${moduleCount + 1}</h3>
+                <button type="button" onclick="removeModule(this)" class="text-red-600 hover:text-red-900">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+            <div class="grid grid-cols-1 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Title</label>
+                    <input type="text" name="modules[${moduleCount}][title]" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Template</label>
+                    <input type="text" name="modules[${moduleCount}][template]" 
+                           value="default"
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Order</label>
+                    <input type="number" name="modules[${moduleCount}][order]" 
+                           value="0"
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Content</label>
+                    <textarea name="modules[${moduleCount}][content]" rows="4"
+                              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    container.insertAdjacentHTML('beforeend', moduleHtml);
+}
+
+function removeModule(button) {
+    if (confirm('Are you sure you want to remove this module?')) {
+        button.closest('.module-item').remove();
+        // Renumber remaining modules
+        const modules = document.querySelectorAll('.module-item');
+        modules.forEach((module, index) => {
+            module.querySelector('h3').textContent = `Module ${index + 1}`;
+            module.querySelectorAll('[name^="modules["]').forEach(input => {
+                input.name = input.name.replace(/modules\[\d+\]/, `modules[${index}]`);
+            });
+        });
+    }
+}
 </script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?> 

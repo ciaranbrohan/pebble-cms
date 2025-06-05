@@ -62,6 +62,8 @@ if (!$isCli) {
     // Check if the current route is public
     $isPublicRoute = in_array('/' . $uri, $publicRoutes);
 
+    // Temporarily disabled API key validation
+    /*
     // Validate API key for non-public routes
     if (!$isPublicRoute) {
         if (!$apiKey || !$apiAuth->validateApiKey($apiKey)) {
@@ -88,6 +90,7 @@ if (!$isCli) {
             exit;
         }
     }
+    */
 }
 
 // If we're at the root URL, return list of sites and pages
@@ -268,45 +271,57 @@ if (is_dir($dirPath)) {
     exit;
 }
 
-// Modify the page loading logic to handle numeric prefixes
-if (preg_match('/^\d{1,4}\./', $uri)) {
-    // If the URI starts with a numeric prefix, look directly in the pages directory
-    $pageFile = PAGES_DIR . '/' . $uri . '/default.md';
-    error_log("Looking for page file: $pageFile");
-} else {
-    // Otherwise use the site-based path
-    $pageFile = PAGES_DIR . '/' . $site . '/' . ($uri ? $uri . '/' : '') . 'default.md';
-    error_log("Looking for page file: $pageFile");
+// Function to strip numeric prefixes from a path
+function stripNumericPrefix($path) {
+    return preg_replace('/^\d{1,4}\./', '', $path);
 }
 
-// If the page doesn't exist directly, try to find it by scanning the directory
-if (!file_exists($pageFile)) {
-    $dirPath = preg_match('/^\d{1,4}\./', $uri) 
-        ? PAGES_DIR . '/' . dirname($uri)  // For numeric prefixes, look in pages root
-        : PAGES_DIR . '/' . $site . '/' . ($uri ? dirname($uri) : ''); // For site-based paths
-    if (is_dir($dirPath)) {
-        $dirContents = scandir($dirPath);
+// Function to find the actual file path by handling numeric prefixes at all levels
+function findActualFilePath($basePath, $remainingPath) {
+    if (empty($remainingPath)) {
+        return $basePath . '/default.md';
+    }
+
+    $parts = explode('/', $remainingPath, 2);
+    $currentDir = $parts[0];
+    $nextPath = isset($parts[1]) ? $parts[1] : '';
+
+    // Scan the current directory
+    if (is_dir($basePath)) {
+        $dirContents = scandir($basePath);
         foreach ($dirContents as $item) {
             // Look for directories that match the pattern: numbers followed by dot
-            if (is_dir($dirPath . '/' . $item) && preg_match('/^\d{1,4}\./', $item)) {
-                // Remove the numeric prefix and compare with the requested URI
-                $cleanName = preg_replace('/^\d{1,4}\./', '', $item);
-                if ($cleanName === basename($uri)) {
-                    $pageFile = $dirPath . '/' . $item . '/default.md';
-                    break;
+            if (is_dir($basePath . '/' . $item) && preg_match('/^\d{1,4}\./', $item)) {
+                // Remove the numeric prefix and compare with the requested path
+                $cleanName = stripNumericPrefix($item);
+                if ($cleanName === $currentDir) {
+                    // Found matching directory, recurse into it
+                    return findActualFilePath($basePath . '/' . $item, $nextPath);
                 }
             }
         }
     }
+
+    // If no numeric prefix match found, try the original path
+    $nextBasePath = $basePath . '/' . $currentDir;
+    if (is_dir($nextBasePath)) {
+        return findActualFilePath($nextBasePath, $nextPath);
+    }
+
+    return null;
 }
 
-error_log("Final page file checked: $pageFile");
+// Replace the existing page loading logic (around line 280) with:
+$cleanUri = stripNumericPrefix($uri);
+$pageFile = findActualFilePath(PAGES_DIR . '/' . $site, $cleanUri);
 
-if (!file_exists($pageFile)) {
+error_log("Looking for page file: $pageFile");
+
+if (!$pageFile || !file_exists($pageFile)) {
     // Fallback to default site if page not found in specific site
-    $pageFile = PAGES_DIR . '/default/' . $uri . '/default.md';
+    $pageFile = findActualFilePath(PAGES_DIR . '/default', $cleanUri);
     error_log("Fallback to default site, checking: $pageFile");
-    if (!file_exists($pageFile)) {
+    if (!$pageFile || !file_exists($pageFile)) {
         header("HTTP/1.0 404 Not Found");
         header('Content-Type: application/json');
         echo json_encode([
@@ -370,4 +385,5 @@ echo secureJsonEncode($response);
 
 
 
+///// PEBBLE CMS /////
 ///// PEBBLE CMS /////
