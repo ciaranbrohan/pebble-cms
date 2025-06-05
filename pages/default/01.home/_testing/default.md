@@ -1,7 +1,8 @@
 ---
 title: testing
 template: default
-type: page
-order: 4
+type: module
+order: 3
 ---
 
+testing

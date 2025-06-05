@@ -2,14 +2,15 @@
 title: "Welcome to Our Site"
 template: modular
 menu: Home
+type: page
 order: 9999
 ---
 
-# Welcome to Our Siteefefefe
+# Welcome to Our Siteefefefeegege
 
-This is a modular homepage that demonstrates the power of modular pages in our CMS.
+This is a modular homepage that demonstrates the power of modular pages in our CMS.gegege
 Each section below is a separate module that can be managed independently.
-
+te
 ## Features
 
 - Markdown content with YAML frontmatter

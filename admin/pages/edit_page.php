@@ -41,6 +41,34 @@ $markdownContent = $content->getContent();
 
 $isModule = isset($frontmatter['type']) && $frontmatter['type'] === 'module';
 
+// After loading the page content, add this code to load sibling modules
+$siblingModules = [];
+$pageDir = dirname($fullPath);
+$moduleDirs = glob($pageDir . '/_*', GLOB_ONLYDIR);
+
+foreach ($moduleDirs as $moduleDir) {
+    $moduleFile = $moduleDir . '/default.md';
+    if (file_exists($moduleFile)) {
+        $moduleContent = new Content($moduleFile);
+        $moduleFrontmatter = $moduleContent->getFrontmatter();
+        $siblingModules[] = [
+            'title' => $moduleFrontmatter['title'] ?? basename($moduleDir),
+            'content' => $moduleContent->getContent(),
+            'template' => $moduleFrontmatter['template'] ?? 'default',
+            'order' => $moduleFrontmatter['order'] ?? 0,
+            'path' => str_replace(ROOT_DIR . '/pages/', '', $moduleFile),
+            'directory' => basename($moduleDir)
+        ];
+    }
+}
+
+// Sort modules by order
+usort($siblingModules, function($a, $b) {
+    return $a['order'] - $b['order'];
+});
+
+// var_dump($siblingModules);
+
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action']) && $_POST['action'] === 'save') {
@@ -57,16 +85,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Handle modules if this is a modular page
         if (isset($_POST['modules']) && is_array($_POST['modules'])) {
             $modules = [];
+            $pageDir = dirname($fullPath);
+            
             foreach ($_POST['modules'] as $module) {
                 if (!empty($module['title']) && !empty($module['content'])) {
-                    $modules[] = [
+                    // Create a sanitized directory name from the title
+                    $moduleDirName = '_' . preg_replace('/[^a-z0-9]+/', '-', strtolower($module['title']));
+                    $moduleDir = $pageDir . '/' . $moduleDirName;
+                    $moduleFile = $moduleDir . '/default.md';
+                    
+                    // Create module directory if it doesn't exist
+                    if (!is_dir($moduleDir)) {
+                        mkdir($moduleDir, 0755, true);
+                    }
+                    
+                    // Prepare module frontmatter
+                    $moduleFrontmatter = [
                         'title' => $module['title'],
-                        'content' => $module['content'],
                         'template' => $module['template'] ?? 'default',
+                        'type' => 'module',
                         'order' => $module['order'] ?? 0
                     ];
+                    
+                    // Construct the module file content
+                    $moduleContent = "---\n";
+                    $moduleContent .= YamlParser::dump($moduleFrontmatter);
+                    $moduleContent .= "---\n\n";
+                    $moduleContent .= $module['content'];
+                    
+                    // Save the module file
+                    if (file_put_contents($moduleFile, $moduleContent)) {
+                        $modules[] = [
+                            'title' => $module['title'],
+                            'content' => $module['content'],
+                            'template' => $module['template'] ?? 'default',
+                            'order' => $module['order'] ?? 0,
+                            'directory' => $moduleDirName
+                        ];
+                    }
                 }
             }
+            
             if (!empty($modules)) {
                 $newFrontmatter['modules'] = $modules;
             }
@@ -101,6 +160,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </a>
             <button type="button" onclick="previewPage()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
                 <i class="fas fa-eye mr-2"></i> Preview
+            </button>
+            <button type="submit" form="edit-form" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700">
+                <i class="fas fa-save mr-2"></i> Save
             </button>
         </div>
     </div>
@@ -160,19 +222,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <!-- Main Content -->
         <div>
-            <label for="content" class="block text-sm font-medium text-gray-700">Content</label>
-            <textarea name="content" id="content" rows="10" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"><?php echo htmlspecialchars($markdownContent); ?></textarea>
+            <label for="main-content" class="block text-sm font-medium text-gray-700">Content</label>
+            <textarea name="content" id="main-content" rows="10" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"><?php echo htmlspecialchars($markdownContent); ?></textarea>
         </div>
 
-        <!-- Modules Section (only shown for modular pages) -->
-        <div id="modules-section" class="<?php echo $isModule ? '' : 'hidden'; ?>">
+        <!-- Modules Section -->
+        <div id="modules-section">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-lg font-medium text-gray-900">Modules</h2>
-                <button type="button" onclick="addModule()" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                    <i class="fas fa-plus mr-1"></i> Add Module
-                </button>
+                <div class="space-x-2">
+                    <button type="button" onclick="addModule()" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+                        <i class="fas fa-plus mr-1"></i> Add Inline Module
+                    </button>
+                </div>
             </div>
             
+            <!-- Sibling Modules -->
+            <?php if (!empty($siblingModules)): ?>
+        
+            <div class="mb-6">
+                <h3 class="text-md font-medium text-gray-900 mb-4">Sibling Modules</h3>
+                <div class="space-y-4">
+                    <?php foreach ($siblingModules as $module): ?>
+                    <div class="module-item bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h4 class="text-md font-medium text-gray-900"><?php echo htmlspecialchars($module['title']); ?></h4>
+                                <?php echo htmlspecialchars($module['content']); ?>
+
+                                        <!-- Main Content -->
+                                <div>
+                                    <label for="module-content-<?php echo htmlspecialchars($module['directory']); ?>" class="block text-sm font-medium text-gray-700">Content</label>
+                                    <textarea name="modules[<?php echo htmlspecialchars($module['directory']); ?>][content]" 
+                                              id="module-content-<?php echo htmlspecialchars($module['directory']); ?>" 
+                                              rows="10" 
+                                              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"><?php echo htmlspecialchars($module['content']); ?></textarea>
+                                </div>
+
+                                <p class="text-sm text-gray-500">Directory: _<?php echo htmlspecialchars($module['directory']); ?></p>
+                            </div>
+                            <div class="flex space-x-2">
+                                <a href="edit_page.php?path=<?php echo urlencode($module['path']); ?>" 
+                                   class="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-indigo-700 bg-indigo-100 hover:bg-indigo-200">
+                                    <i class="fas fa-edit mr-1"></i> Edit
+                                </a>
+                                <button type="button" onclick="deleteModule('<?php echo htmlspecialchars($module['directory']); ?>')" 
+                                        class="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-700 bg-red-100 hover:bg-red-200">
+                                    <i class="fas fa-trash mr-1"></i> Delete
+                                </button>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <span class="font-medium">Template:</span> <?php echo htmlspecialchars($module['template']); ?>
+                            </div>
+                            <div>
+                                <span class="font-medium">Order:</span> <?php echo htmlspecialchars($module['order']); ?>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+            
+            <!-- Inline Modules (existing code) -->
             <div id="modules-container" class="space-y-4">
                 <?php 
                 if (isset($frontmatter['modules']) && is_array($frontmatter['modules'])) {
@@ -205,8 +319,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700">Content</label>
-                                <textarea name="modules[<?php echo $index; ?>][content]" rows="4"
+                                <label for="inline-module-content-<?php echo $index; ?>" class="block text-sm font-medium text-gray-700">Content</label>
+                                <textarea name="modules[<?php echo $index; ?>][content]" 
+                                          id="inline-module-content-<?php echo $index; ?>" 
+                                          rows="4"
                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"><?php echo htmlspecialchars($module['content']); ?></textarea>
                             </div>
                         </div>
@@ -246,32 +362,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
 <script>
-// Initialize EasyMDE
-const easyMDE = new EasyMDE({
-    element: document.getElementById('content'),
-    spellChecker: false,
-    status: ['lines', 'words', 'cursor'],
-    toolbar: [
-        'bold', 'italic', 'heading', '|',
-        'quote', 'unordered-list', 'ordered-list', '|',
-        'link', 'image', 'table', '|',
-        'preview', 'side-by-side', 'fullscreen', '|',
-        'guide'
-    ],
-    autofocus: true,
-    autosave: {
-        enabled: true,
-        uniqueId: '<?php echo md5($pagePath); ?>',
-        delay: 1000,
-    }
+// Initialize EasyMDE for all content textareas
+const editors = {};
+document.querySelectorAll('textarea[name*="content"]').forEach(textarea => {
+    const editor = new EasyMDE({
+        element: textarea,
+        spellChecker: false,
+        status: ['lines', 'words', 'cursor'],
+        toolbar: [
+            'bold', 'italic', 'heading', '|',
+            'quote', 'unordered-list', 'ordered-list', '|',
+            'link', 'image', 'table', '|',
+            'preview', 'side-by-side', 'fullscreen', '|',
+            'guide'
+        ],
+        autofocus: false,
+        autosave: {
+            enabled: true,
+            uniqueId: textarea.id,
+            delay: 1000,
+        }
+    });
+    editors[textarea.id] = editor;
 });
 
-// Preview functionality
+// Modify the form submission to capture all editor values
+document.getElementById('edit-form').addEventListener('submit', function(e) {
+    // Update all textarea values with their EasyMDE content before submission
+    Object.values(editors).forEach(editor => {
+        editor.save();
+    });
+});
+
+// Update the preview functionality
 function previewPage() {
-    const content = easyMDE.value();
-    const previewContent = document.getElementById('preview-content');
-    previewContent.innerHTML = marked.parse(content);
-    document.getElementById('preview-modal').classList.remove('hidden');
+    const mainEditor = editors['main-content'];
+    if (mainEditor) {
+        const content = mainEditor.value();
+        const previewContent = document.getElementById('preview-content');
+        previewContent.innerHTML = marked.parse(content);
+        document.getElementById('preview-modal').classList.remove('hidden');
+    }
 }
 
 function hidePreviewModal() {
@@ -300,6 +431,7 @@ function toggleModuleFields(type) {
 function addModule() {
     const container = document.getElementById('modules-container');
     const moduleCount = container.children.length;
+    const moduleId = `module-${moduleCount}`;
     
     const moduleHtml = `
         <div class="module-item bg-gray-50 p-4 rounded-lg">
@@ -328,8 +460,8 @@ function addModule() {
                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Content</label>
-                    <textarea name="modules[${moduleCount}][content]" rows="4"
+                    <label for="inline-module-content-${moduleCount}" class="block text-sm font-medium text-gray-700">Content</label>
+                    <textarea id="${moduleId}" name="modules[${moduleCount}][content]" rows="4"
                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
                 </div>
             </div>
@@ -337,11 +469,35 @@ function addModule() {
     `;
     
     container.insertAdjacentHTML('beforeend', moduleHtml);
+    
+    // Initialize EasyMDE for the new module's textarea
+    const newTextarea = document.getElementById(moduleId);
+    if (newTextarea) {
+        editors[moduleId] = new EasyMDE({
+            element: newTextarea,
+            spellChecker: false,
+            status: ['lines', 'words', 'cursor'],
+            toolbar: [
+                'bold', 'italic', 'heading', '|',
+                'quote', 'unordered-list', 'ordered-list', '|',
+                'link', 'image', 'table', '|',
+                'preview', 'side-by-side', 'fullscreen', '|',
+                'guide'
+            ],
+            autofocus: false
+        });
+    }
 }
 
 function removeModule(button) {
     if (confirm('Are you sure you want to remove this module?')) {
-        button.closest('.module-item').remove();
+        const moduleItem = button.closest('.module-item');
+        const textarea = moduleItem.querySelector('textarea');
+        if (textarea && editors[textarea.id]) {
+            editors[textarea.id].toTextArea();
+            delete editors[textarea.id];
+        }
+        moduleItem.remove();
         // Renumber remaining modules
         const modules = document.querySelectorAll('.module-item');
         modules.forEach((module, index) => {
@@ -351,6 +507,41 @@ function removeModule(button) {
             });
         });
     }
+}
+
+function deleteModule(moduleDir) {
+    if (confirm('Are you sure you want to delete this module? This will permanently delete the module directory and all its contents.')) {
+        fetch('delete_module.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                module_dir: moduleDir,
+                parent_path: '<?php echo $pagePath; ?>'
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.location.reload();
+            } else {
+                console.log(data);
+                alert('Error deleting module: ' + data.message);
+            }
+        })
+        .catch(error => {
+            alert('Error deleting module: ' + error);
+        });
+    }
+}
+
+function saveModules() {
+    // Get the form element
+    const form = document.getElementById('edit-form');
+    
+    // Submit the form with the correct action
+    form.submit();
 }
 </script>
 

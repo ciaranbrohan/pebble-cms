@@ -1,7 +1,7 @@
 <?php
 session_start();
 if (!isset($_SESSION['admin_logged_in']) && basename($_SERVER['PHP_SELF']) !== 'login.php') {
-    header('Location: login.php');
+    header('Location: /admin/login.php');
     exit;
 }
 ?>
