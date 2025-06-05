@@ -39,4 +39,32 @@ class YamlParser {
         
         return $data;
     }
+
+    public static function dump($data) {
+        $output = '';
+        
+        foreach ($data as $key => $value) {
+            // Handle different value types
+            if (is_bool($value)) {
+                $value = $value ? 'true' : 'false';
+            } elseif (is_string($value)) {
+                // Quote strings that contain special characters
+                if (strpos($value, ':') !== false || strpos($value, '#') !== false || 
+                    strpos($value, '[') !== false || strpos($value, ']') !== false ||
+                    strpos($value, '{') !== false || strpos($value, '}') !== false ||
+                    strpos($value, ',') !== false || strpos($value, '&') !== false ||
+                    strpos($value, '*') !== false || strpos($value, '!') !== false ||
+                    strpos($value, '|') !== false || strpos($value, '>') !== false ||
+                    strpos($value, "'") !== false || strpos($value, '"') !== false ||
+                    strpos($value, '%') !== false || strpos($value, '@') !== false ||
+                    strpos($value, '`') !== false || strpos($value, ' ') !== false) {
+                    $value = '"' . str_replace('"', '\\"', $value) . '"';
+                }
+            }
+            
+            $output .= $key . ': ' . $value . "\n";
+        }
+        
+        return $output;
+    }
 } 

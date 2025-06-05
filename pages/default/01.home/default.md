@@ -1,10 +1,11 @@
 ---
-title: Welcome to Our Site
+title: "Welcome to Our Site"
 template: modular
 menu: Home
+order: 9999
 ---
 
-# Welcome to Our Site
+# Welcome to Our Siteefefefe
 
 This is a modular homepage that demonstrates the power of modular pages in our CMS.
 Each section below is a separate module that can be managed independently.
@@ -17,7 +18,7 @@ Each section below is a separate module that can be managed independently.
 - Easy to customize
 - Fast and lightweight
 
-## Getting Started
+## Getting Startedrgege
 
 1. Create your content in Markdown files
 2. Customize the templates
