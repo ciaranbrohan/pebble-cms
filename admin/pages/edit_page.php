@@ -113,65 +113,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $newFullPath = ROOT_DIR . '/pages/' . $cleanPath;
             
-            // Validate new path
-            if (file_exists($newFullPath)) {
-                $_SESSION['flash_message'] = 'A page already exists at this path';
-                $_SESSION['flash_type'] = 'error';
-                header('Location: edit_page.php?path=' . urlencode($pagePath));
-                exit;
-            }
-            
-            // Create new directory if it doesn't exist
-            $newDir = dirname($newFullPath);
-            if (!is_dir($newDir)) {
-                if (!mkdir($newDir, 0755, true)) {
-                    $_SESSION['flash_message'] = 'Error creating new directory';
-                    $_SESSION['flash_type'] = 'error';
-                    header('Location: edit_page.php?path=' . urlencode($pagePath));
-                    exit;
-                }
-            }
-            
-            // Move the file
-            if (!rename($fullPath, $newFullPath)) {
-                $_SESSION['flash_message'] = 'Error moving page to new location';
-                $_SESSION['flash_type'] = 'error';
-                header('Location: edit_page.php?path=' . urlencode($pagePath));
-                exit;
-            }
-            
-            // Update paths for modules if they exist
-            $oldModuleDir = dirname($fullPath);
-            $newModuleDir = dirname($newFullPath);
-            $moduleDirs = glob($oldModuleDir . '/_*', GLOB_ONLYDIR);
-            
-            foreach ($moduleDirs as $moduleDir) {
-                $moduleName = basename($moduleDir);
-                $newModulePath = $newModuleDir . '/' . $moduleName;
-                
-                if (!is_dir($newModulePath)) {
-                    mkdir($newModulePath, 0755, true);
+            // If the new path is different from the current path
+            if ($newFullPath !== $fullPath) {
+                // Create new directory if it doesn't exist
+                $newDir = dirname($newFullPath);
+                if (!is_dir($newDir)) {
+                    if (!mkdir($newDir, 0755, true)) {
+                        $_SESSION['flash_message'] = 'Error creating new directory';
+                        $_SESSION['flash_type'] = 'error';
+                        header('Location: edit_page.php?path=' . urlencode($pagePath));
+                        exit;
+                    }
                 }
                 
-                $moduleFile = $moduleDir . '/default.md';
-                $newModuleFile = $newModulePath . '/default.md';
-                
-                if (file_exists($moduleFile)) {
-                    rename($moduleFile, $newModuleFile);
+                // If the target file exists, we'll update it instead of moving
+                if (file_exists($newFullPath)) {
+                    // Update the paths to point to the existing file
+                    $fullPath = $newFullPath;
+                    $pagePath = $cleanPath;
+                } else {
+                    // Move the file if it doesn't exist
+                    if (!rename($fullPath, $newFullPath)) {
+                        $_SESSION['flash_message'] = 'Error moving page to new location';
+                        $_SESSION['flash_type'] = 'error';
+                        header('Location: edit_page.php?path=' . urlencode($pagePath));
+                        exit;
+                    }
+                    
+                    // Update paths for modules if they exist
+                    $oldModuleDir = dirname($fullPath);
+                    $newModuleDir = dirname($newFullPath);
+                    $moduleDirs = glob($oldModuleDir . '/_*', GLOB_ONLYDIR);
+                    
+                    foreach ($moduleDirs as $moduleDir) {
+                        $moduleName = basename($moduleDir);
+                        $newModulePath = $newModuleDir . '/' . $moduleName;
+                        
+                        if (!is_dir($newModulePath)) {
+                            mkdir($newModulePath, 0755, true);
+                        }
+                        
+                        $moduleFile = $moduleDir . '/default.md';
+                        $newModuleFile = $newModulePath . '/default.md';
+                        
+                        if (file_exists($moduleFile)) {
+                            rename($moduleFile, $newModuleFile);
+                        }
+                    }
+                    
+                    // Clean up old directory if it's empty
+                    if (is_dir($oldModuleDir)) {
+                        $files = glob($oldModuleDir . '/*');
+                        if (empty($files)) {
+                            rmdir($oldModuleDir);
+                        }
+                    }
+                    
+                    // Update the paths
+                    $fullPath = $newFullPath;
+                    $pagePath = $cleanPath;
                 }
             }
-            
-            // Clean up old directory if it's empty
-            if (is_dir($oldModuleDir)) {
-                $files = glob($oldModuleDir . '/*');
-                if (empty($files)) {
-                    rmdir($oldModuleDir);
-                }
-            }
-            
-            // Update the paths
-            $fullPath = $newFullPath;
-            $pagePath = $cleanPath;
         }
         
         // Process frontmatter fields
@@ -331,15 +333,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                class="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                     </div>
                 </div>
+            </div>
+        </div>
 
         <!-- Main Content -->
-        <div>
+        <div class="mb-6">
             <label for="main-content" class="block text-sm font-medium text-gray-700">Content</label>
             <textarea name="content" id="main-content" rows="10" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"><?php echo htmlspecialchars($markdownContent); ?></textarea>
         </div>
 
         <!-- Modules Section -->
-        <div id="modules-section">
+        <div id="modules-section" class="mt-8">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-lg font-medium text-gray-900">Modules</h2>
                 <div class="space-x-2">
@@ -351,19 +355,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             <!-- Sibling Modules -->
             <?php if (!empty($siblingModules)): ?>
-        
             <div class="mb-6">
                 <h3 class="text-md font-medium text-gray-900 mb-4">Sibling Modules</h3>
-                <div class="space-y-4">
+                <div class="space-y-4 w-full">
                     <?php foreach ($siblingModules as $module): ?>
-                    <div class="module-item bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <div class="module-item bg-gray-50 p-4 rounded-lg border border-gray-200 w-full">
                         <div class="flex justify-between items-start mb-4">
-                            <div>
+                            <div class="w-full">
                                 <h4 class="text-md font-medium text-gray-900"><?php echo htmlspecialchars($module['title']); ?></h4>
-                                <?php echo htmlspecialchars($module['content']); ?>
 
-                                        <!-- Main Content -->
-                                <div>
+                                <!-- Main Content -->
+                                <div class="w-full">
                                     <label for="module-content-<?php echo htmlspecialchars($module['directory']); ?>" class="block text-sm font-medium text-gray-700">Content</label>
                                     <textarea name="modules[<?php echo htmlspecialchars($module['directory']); ?>][content]" 
                                               id="module-content-<?php echo htmlspecialchars($module['directory']); ?>" 
@@ -384,7 +386,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </button>
                             </div>
                         </div>
-                        <div class="grid grid-cols-2 gap-4 text-sm">
+                        <div class="grid grid-cols-2 gap-4 text-sm w-full">
                             <div>
                                 <span class="font-medium">Template:</span> <?php echo htmlspecialchars($module['template']); ?>
                             </div>
@@ -398,39 +400,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <?php endif; ?>
             
-            <!-- Inline Modules (existing code) -->
-            <div id="modules-container" class="space-y-4">
+            <!-- Inline Modules -->
+            <div id="modules-container" class="space-y-4 w-full">
                 <?php 
                 if (isset($frontmatter['modules']) && is_array($frontmatter['modules'])) {
                     foreach ($frontmatter['modules'] as $index => $module): 
                 ?>
-                    <div class="module-item bg-gray-50 p-4 rounded-lg">
+                    <div class="module-item bg-gray-50 p-4 rounded-lg w-full">
                         <div class="flex justify-between items-start mb-4">
                             <h3 class="text-md font-medium text-gray-900">Module <?php echo $index + 1; ?></h3>
                             <button type="button" onclick="removeModule(this)" class="text-red-600 hover:text-red-900">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </div>
-                        <div class="grid grid-cols-1 gap-4">
-                            <div>
+                        <div class="grid grid-cols-1 gap-4 w-full">
+                            <div class="w-full">
                                 <label class="block text-sm font-medium text-gray-700">Title</label>
                                 <input type="text" name="modules[<?php echo $index; ?>][title]" 
                                        value="<?php echo htmlspecialchars($module['title']); ?>"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                             </div>
-                            <div>
+                            <div class="w-full">
                                 <label class="block text-sm font-medium text-gray-700">Template</label>
                                 <input type="text" name="modules[<?php echo $index; ?>][template]" 
                                        value="<?php echo htmlspecialchars($module['template'] ?? 'default'); ?>"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                             </div>
-                            <div>
+                            <div class="w-full">
                                 <label class="block text-sm font-medium text-gray-700">Order</label>
                                 <input type="number" name="modules[<?php echo $index; ?>][order]" 
                                        value="<?php echo htmlspecialchars($module['order'] ?? '0'); ?>"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                             </div>
-                            <div>
+                            <div class="w-full">
                                 <label for="inline-module-content-<?php echo $index; ?>" class="block text-sm font-medium text-gray-700">Content</label>
                                 <textarea name="modules[<?php echo $index; ?>][content]" 
                                           id="inline-module-content-<?php echo $index; ?>" 
@@ -474,37 +476,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
 <script>
-// Initialize EasyMDE for all content textareas
-const editors = {};
-document.querySelectorAll('textarea[name*="content"]').forEach(textarea => {
-    const editor = new EasyMDE({
-        element: textarea,
-        spellChecker: false,
-        status: ['lines', 'words', 'cursor'],
-        toolbar: [
-            'bold', 'italic', 'heading', '|',
-            'quote', 'unordered-list', 'ordered-list', '|',
-            'link', 'image', 'table', '|',
-            'preview', 'side-by-side', 'fullscreen', '|',
-            'guide'
-        ],
-        autofocus: false,
-        autosave: {
-            enabled: true,
-            uniqueId: textarea.id,
-            delay: 1000,
+// First declare the editors object
+let editors = {};
+
+// Then define the cleanup function
+function cleanupEditors() {
+    Object.values(editors).forEach(editor => {
+        if (editor) {
+            editor.toTextArea();
         }
     });
-    editors[textarea.id] = editor;
-});
+    editors = {};
+}
 
-// Modify the form submission to capture all editor values
-document.getElementById('edit-form').addEventListener('submit', function(e) {
-    // Update all textarea values with their EasyMDE content before submission
-    Object.values(editors).forEach(editor => {
-        editor.save();
+// Then the initialization function
+function initializeEditors() {
+    cleanupEditors();
+    document.querySelectorAll('textarea[name*="content"]').forEach(textarea => {
+        // Get the current page path from the URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const pagePath = urlParams.get('path');
+        
+        const editor = new EasyMDE({
+            element: textarea,
+            spellChecker: false,
+            status: ['lines', 'words', 'cursor'],
+            toolbar: [
+                'bold', 'italic', 'heading', '|',
+                'quote', 'unordered-list', 'ordered-list', '|',
+                'link', 'image', 'table', '|',
+                'preview', 'side-by-side', 'fullscreen', '|',
+                'guide'
+            ],
+            autofocus: false,
+            autosave: {
+                enabled: true,
+                // Make the uniqueId include the page path
+                uniqueId: `smde_${pagePath}_${textarea.id}`,
+                delay: 1000,
+            },
+            initialValue: textarea.value
+        });
+        editors[textarea.id] = editor;
     });
-});
+}
+
+// Call initializeEditors when the page loads
+document.addEventListener('DOMContentLoaded', initializeEditors);
 
 // Update the preview functionality
 function previewPage() {

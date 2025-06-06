@@ -16,6 +16,13 @@ require_once __DIR__ . '/../../core/ApiAuth.php';
 require_once __DIR__ . '/../../core/YamlParser.php';
 require_once __DIR__ . '/../includes/header.php';
 
+// Add these lines after the header include
+?>
+<!-- Add EasyMDE CSS and JS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
+<script src="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.js"></script>
+
+<?php
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action']) && $_POST['action'] === 'create') {
@@ -94,18 +101,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ];
         
         // Add modules if this is a modular page
-        if ($type === 'module' && isset($_POST['modules']) && is_array($_POST['modules'])) {
+        if (isset($_POST['modules']) && is_array($_POST['modules'])) {
             $modules = [];
             foreach ($_POST['modules'] as $module) {
                 if (!empty($module['title']) && !empty($module['content'])) {
-                    $modules[] = [
+                    // Create a sanitized directory name from the title
+                    $moduleDirName = '_' . preg_replace('/[^a-z0-9]+/', '-', strtolower($module['title']));
+                    $moduleDir = $dirPath . '/' . $moduleDirName;
+                    $moduleFile = $moduleDir . '/default.md';
+                    
+                    // Create module directory if it doesn't exist
+                    if (!is_dir($moduleDir)) {
+                        mkdir($moduleDir, 0755, true);
+                    }
+                    
+                    // Prepare module frontmatter
+                    $moduleFrontmatter = [
                         'title' => $module['title'],
-                        'content' => $module['content'],
                         'template' => $module['template'] ?? 'default',
+                        'type' => 'module',
                         'order' => $module['order'] ?? 0
                     ];
+                    
+                    // Construct the module file content
+                    $moduleContent = "---\n";
+                    $moduleContent .= YamlParser::dump($moduleFrontmatter);
+                    $moduleContent .= "---\n\n";
+                    $moduleContent .= $module['content'];
+                    
+                    // Save the module file
+                    if (file_put_contents($moduleFile, $moduleContent)) {
+                        $modules[] = [
+                            'title' => $module['title'],
+                            'content' => $module['content'],
+                            'template' => $module['template'] ?? 'default',
+                            'order' => $module['order'] ?? 0,
+                            'directory' => $moduleDirName
+                        ];
+                    }
                 }
             }
+            
             if (!empty($modules)) {
                 $frontmatter['modules'] = $modules;
             }
@@ -196,7 +232,7 @@ $templates = array_map(function($template) {
         </div>
 
         <!-- Modules Section (hidden by default) -->
-        <div id="modules-section" class="hidden">
+        <div id="modules-section">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-lg font-medium text-gray-900">Modules</h2>
                 <button type="button" onclick="addModule()" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
@@ -221,15 +257,26 @@ $templates = array_map(function($template) {
 </div>
 
 <script>
-// Module handling functions
-function toggleModuleFields(type) {
-    const modulesSection = document.getElementById('modules-section');
-    modulesSection.classList.toggle('hidden', type !== 'module');
-}
+// Initialize EasyMDE for the main content
+const mainEditor = new EasyMDE({
+    element: document.getElementById('content'),
+    spellChecker: false,
+    status: ['lines', 'words', 'cursor'],
+    toolbar: [
+        'bold', 'italic', 'heading', '|',
+        'quote', 'unordered-list', 'ordered-list', '|',
+        'link', 'image', 'table', '|',
+        'preview', 'side-by-side', 'fullscreen', '|',
+        'guide'
+    ],
+    autofocus: false
+});
 
+// Update the addModule function to initialize EasyMDE for new modules
 function addModule() {
     const container = document.getElementById('modules-container');
     const moduleCount = container.children.length;
+    const moduleId = `module-content-${moduleCount}`;
     
     const moduleHtml = `
         <div class="module-item bg-gray-50 p-4 rounded-lg">
@@ -264,8 +311,8 @@ function addModule() {
                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Content</label>
-                    <textarea name="modules[${moduleCount}][content]" rows="4"
+                    <label for="${moduleId}" class="block text-sm font-medium text-gray-700">Content</label>
+                    <textarea id="${moduleId}" name="modules[${moduleCount}][content]" rows="4"
                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
                 </div>
             </div>
@@ -273,11 +320,35 @@ function addModule() {
     `;
     
     container.insertAdjacentHTML('beforeend', moduleHtml);
+    
+    // Initialize EasyMDE for the new module's textarea
+    const newTextarea = document.getElementById(moduleId);
+    if (newTextarea) {
+        new EasyMDE({
+            element: newTextarea,
+            spellChecker: false,
+            status: ['lines', 'words', 'cursor'],
+            toolbar: [
+                'bold', 'italic', 'heading', '|',
+                'quote', 'unordered-list', 'ordered-list', '|',
+                'link', 'image', 'table', '|',
+                'preview', 'side-by-side', 'fullscreen', '|',
+                'guide'
+            ],
+            autofocus: false
+        });
+    }
 }
 
+// Update the removeModule function to clean up EasyMDE instances
 function removeModule(button) {
     if (confirm('Are you sure you want to remove this module?')) {
-        button.closest('.module-item').remove();
+        const moduleItem = button.closest('.module-item');
+        const textarea = moduleItem.querySelector('textarea');
+        if (textarea && textarea.easymde) {
+            textarea.easymde.toTextArea();
+        }
+        moduleItem.remove();
         // Renumber remaining modules
         const modules = document.querySelectorAll('.module-item');
         modules.forEach((module, index) => {
