@@ -76,6 +76,7 @@ usort($siblingModules, function($a, $b) {
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    error_log('POST data: ' . print_r($_POST, true));
     if (isset($_POST['action']) && $_POST['action'] === 'save') {
         $newContent = $_POST['content'];
         $newFrontmatter = [];
@@ -195,6 +196,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Handle sibling modules if they exist
         if (isset($_POST['modules']) && is_array($_POST['modules'])) {
             $pageDir = dirname($fullPath);
+
+            
             
             foreach ($_POST['modules'] as $moduleDir => $moduleData) {
                 // Skip if this is an inline module (numeric index)
@@ -247,16 +250,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $fileContent .= "---\n\n";
         $fileContent .= $newContent;
         
-        // Save the file
-        if (!is_writable(dirname($fullPath))) {
-            $_SESSION['flash_message'] = 'Error: Directory is not writable. Please check permissions.';
-            $_SESSION['flash_type'] = 'error';
-            error_log("Directory not writable: " . dirname($fullPath));
-        } else if (file_exists($fullPath) && !is_writable($fullPath)) {
-            $_SESSION['flash_message'] = 'Error: File is not writable. Please check permissions.';
-            $_SESSION['flash_type'] = 'error';
-            error_log("File not writable: " . $fullPath);
-        } else if (file_put_contents($fullPath, $fileContent)) {
+
+        // Now try to save the file
+        if (file_put_contents($fullPath, $fileContent)) {
             $_SESSION['flash_message'] = 'Page saved successfully';
             $_SESSION['flash_type'] = 'success';
             header('Location: edit_page.php?path=' . urlencode($pagePath));
@@ -709,8 +705,7 @@ function addModule() {
     const moduleCount = container.children.length;
     const moduleId = `module-${moduleCount}`;
     
-    const moduleHtml = `
-        <div class="module-item bg-gray-50 p-4 rounded-lg">
+    const moduleHtml = `        <div class="module-item bg-gray-50 p-4 rounded-lg">
             <div class="flex justify-between items-start mb-4">
                 <h3 class="text-md font-medium text-gray-900">Module ${moduleCount + 1}</h3>
                 <button type="button" onclick="removeModule(this)" class="text-red-600 hover:text-red-900">
@@ -831,12 +826,13 @@ function addSiblingModuleCustomField(button) {
         return;
     }
 
-    // Try to find the module directory from the content input or any other input
-    const contentInput = moduleItem.querySelector('textarea[name*="[content]"]');
+    // Find the module directory from the hidden input that contains the directory name
+    const directoryText = moduleItem.querySelector('p.text-sm.text-gray-500');
     let moduleDirectory = 'new_field';
     
-    if (contentInput) {
-        const match = contentInput.name.match(/modules\[([^\]]+)\]/);
+    if (directoryText) {
+        // Extract directory name from text like "Directory: _module_name"
+        const match = directoryText.textContent.match(/Directory: _([^\s]+)/);
         if (match && match[1]) {
             moduleDirectory = match[1];
         }

@@ -33,6 +33,11 @@ class YamlParser {
                     $value = strpos($value, '.') !== false ? (float)$value : (int)$value;
                 }
                 
+                // Handle empty values
+                if ($value === '') {
+                    $value = null;
+                }
+                
                 $data[$key] = $value;
             }
         }
