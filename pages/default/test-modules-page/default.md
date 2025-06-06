@@ -1,7 +1,6 @@
 ---
 title: "Test Modules Page"
-order: 0
-modules: Array
+order: 9999
 ---
 
 Test page with modules

@@ -95,10 +95,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Prepare frontmatter
         $frontmatter = [
             'title' => $title,
-            'template' => $_POST['template'] ?? 'default',
-            'type' => $type,
             'order' => $order
         ];
+        
+        // Add custom fields if they exist
+        if (isset($_POST['frontmatter']) && is_array($_POST['frontmatter'])) {
+            foreach ($_POST['frontmatter'] as $field) {
+                if (!empty($field['key']) && isset($field['value'])) {
+                    $frontmatter[$field['key']] = $field['value'];
+                }
+            }
+        }
         
         // Add modules if this is a modular page
         if (isset($_POST['modules']) && is_array($_POST['modules'])) {
@@ -122,6 +129,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'type' => 'module',
                         'order' => $module['order'] ?? 0
                     ];
+                    
+                    // Add custom fields for modules if they exist
+                    if (isset($module['frontmatter']) && is_array($module['frontmatter'])) {
+                        foreach ($module['frontmatter'] as $field) {
+                            if (!empty($field['key']) && isset($field['value'])) {
+                                $moduleFrontmatter[$field['key']] = $field['value'];
+                            }
+                        }
+                    }
                     
                     // Construct the module file content
                     $moduleContent = "---\n";
@@ -224,6 +240,20 @@ $templates = array_map(function($template) {
             </div>
         </div>
 
+        <!-- Custom Fields Section -->
+        <div class="bg-gray-50 p-4 rounded-lg mt-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-medium text-gray-900">Custom Fields</h2>
+                <button type="button" onclick="addCustomField()" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <i class="fas fa-plus mr-1"></i> Add Custom Field
+                </button>
+            </div>
+            
+            <div id="custom-fields-container" class="space-y-4">
+                <!-- Custom fields will be added here dynamically -->
+            </div>
+        </div>
+
         <!-- Main Content -->
         <div>
             <label for="content" class="block text-sm font-medium text-gray-700">Content</label>
@@ -315,6 +345,17 @@ function addModule() {
                     <textarea id="${moduleId}" name="modules[${moduleCount}][content]" rows="4"
                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
                 </div>
+                <div class="module-custom-fields">
+                    <div class="flex justify-between items-center mb-2">
+                        <h4 class="text-sm font-medium text-gray-700">Custom Fields</h4>
+                        <button type="button" onclick="addModuleCustomField(this)" class="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+                            <i class="fas fa-plus mr-1"></i> Add Field
+                        </button>
+                    </div>
+                    <div class="module-custom-fields-container space-y-2">
+                        <!-- Custom fields will be added here dynamically -->
+                    </div>
+                </div>
             </div>
         </div>
     `;
@@ -357,6 +398,80 @@ function removeModule(button) {
                 input.name = input.name.replace(/modules\[\d+\]/, `modules[${index}]`);
             });
         });
+    }
+}
+
+// Add custom field functionality
+function addCustomField() {
+    const container = document.getElementById('custom-fields-container');
+    const fieldCount = container.children.length;
+    
+    const fieldHtml = `
+        <div class="custom-field-item bg-white p-4 rounded-lg border border-gray-200">
+            <div class="flex items-start space-x-2">
+                <div class="flex-grow">
+                    <label class="block text-sm font-medium text-gray-700">Field Name</label>
+                    <input type="text" name="frontmatter[custom_${fieldCount}][key]" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                           placeholder="Enter field name">
+                </div>
+                <div class="flex-grow">
+                    <label class="block text-sm font-medium text-gray-700">Value</label>
+                    <input type="text" name="frontmatter[custom_${fieldCount}][value]" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                           placeholder="Enter field value">
+                </div>
+                <button type="button" onclick="removeCustomField(this)" class="mt-6 text-red-600 hover:text-red-900">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    
+    container.insertAdjacentHTML('beforeend', fieldHtml);
+}
+
+function removeCustomField(button) {
+    if (confirm('Are you sure you want to remove this custom field?')) {
+        button.closest('.custom-field-item').remove();
+    }
+}
+
+// Add these new functions at the end of the script section
+function addModuleCustomField(button) {
+    const container = button.closest('.module-custom-fields').querySelector('.module-custom-fields-container');
+    const moduleItem = button.closest('.module-item');
+    const moduleIndex = Array.from(document.querySelectorAll('.module-item')).indexOf(moduleItem);
+    const fieldCount = container.children.length;
+    
+    const fieldHtml = `
+        <div class="module-custom-field-item bg-white p-2 rounded-lg border border-gray-200">
+            <div class="flex items-start space-x-2">
+                <div class="flex-grow">
+                    <label class="block text-xs font-medium text-gray-700">Field Name</label>
+                    <input type="text" name="modules[${moduleIndex}][frontmatter][${fieldCount}][key]" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                           placeholder="Enter field name">
+                </div>
+                <div class="flex-grow">
+                    <label class="block text-xs font-medium text-gray-700">Value</label>
+                    <input type="text" name="modules[${moduleIndex}][frontmatter][${fieldCount}][value]" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                           placeholder="Enter field value">
+                </div>
+                <button type="button" onclick="removeModuleCustomField(this)" class="mt-6 text-red-600 hover:text-red-900">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    
+    container.insertAdjacentHTML('beforeend', fieldHtml);
+}
+
+function removeModuleCustomField(button) {
+    if (confirm('Are you sure you want to remove this custom field?')) {
+        button.closest('.module-custom-field-item').remove();
     }
 }
 </script>

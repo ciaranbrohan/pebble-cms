@@ -61,7 +61,8 @@ foreach ($moduleDirs as $moduleDir) {
             'template' => $moduleFrontmatter['template'] ?? 'default',
             'order' => $moduleFrontmatter['order'] ?? 0,
             'path' => str_replace(ROOT_DIR . '/pages/', '', $moduleFile),
-            'directory' => basename($moduleDir)
+            'directory' => basename($moduleDir),
+            'frontmatter' => $moduleFrontmatter
         ];
     }
 }
@@ -178,61 +179,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Process frontmatter fields
         foreach ($_POST['frontmatter'] as $key => $value) {
-            if (!empty($value)) {
-                $newFrontmatter[$key] = $value;
+            if (is_array($value) && isset($value['key']) && isset($value['value'])) {
+                // This is a custom field
+                if (!empty($value['key']) && !empty($value['value'])) {
+                    $newFrontmatter[$value['key']] = $value['value'];
+                }
+            } else {
+                // This is a standard field
+                if (!empty($value)) {
+                    $newFrontmatter[$key] = $value;
+                }
             }
         }
         
-        // Ensure required fields are always present
-        $newFrontmatter['title'] = $_POST['frontmatter']['title'];
-        $newFrontmatter['order'] = (int)$_POST['frontmatter']['order'];
-        
-        // Handle modules if this is a modular page
+        // Handle sibling modules if they exist
         if (isset($_POST['modules']) && is_array($_POST['modules'])) {
-            $modules = [];
             $pageDir = dirname($fullPath);
             
-            foreach ($_POST['modules'] as $module) {
-                if (!empty($module['title']) && !empty($module['content'])) {
-                    // Create a sanitized directory name from the title
-                    $moduleDirName = '_' . preg_replace('/[^a-z0-9]+/', '-', strtolower($module['title']));
-                    $moduleDir = $pageDir . '/' . $moduleDirName;
-                    $moduleFile = $moduleDir . '/default.md';
+            foreach ($_POST['modules'] as $moduleDir => $moduleData) {
+                // Skip if this is an inline module (numeric index)
+                if (is_numeric($moduleDir)) {
+                    continue;
+                }
+                
+                // Process sibling module
+                if (!empty($moduleData['content'])) {
+                    $modulePath = $pageDir . '/' . $moduleDir . '/default.md';
+                    $moduleDirPath = dirname($modulePath);
                     
                     // Create module directory if it doesn't exist
-                    if (!is_dir($moduleDir)) {
-                        mkdir($moduleDir, 0755, true);
+                    if (!is_dir($moduleDirPath)) {
+                        mkdir($moduleDirPath, 0755, true);
                     }
                     
                     // Prepare module frontmatter
                     $moduleFrontmatter = [
-                        'title' => $module['title'],
-                        'template' => $module['template'] ?? 'default',
+                        'title' => $moduleData['title'] ?? basename($moduleDir),
+                        'template' => $moduleData['template'] ?? 'default',
                         'type' => 'module',
-                        'order' => $module['order'] ?? 0
+                        'order' => $moduleData['order'] ?? 0
                     ];
+                    
+                    // Add custom fields for modules if they exist
+                    if (isset($moduleData['frontmatter']) && is_array($moduleData['frontmatter'])) {
+                        foreach ($moduleData['frontmatter'] as $fieldKey => $fieldData) {
+                            if (isset($fieldData['key']) && isset($fieldData['value']) && !empty($fieldData['key'])) {
+                                $moduleFrontmatter[$fieldData['key']] = $fieldData['value'];
+                            }
+                        }
+                    }
                     
                     // Construct the module file content
                     $moduleContent = "---\n";
                     $moduleContent .= YamlParser::dump($moduleFrontmatter);
                     $moduleContent .= "---\n\n";
-                    $moduleContent .= $module['content'];
+                    $moduleContent .= $moduleData['content'];
                     
                     // Save the module file
-                    if (file_put_contents($moduleFile, $moduleContent)) {
-                        $modules[] = [
-                            'title' => $module['title'],
-                            'content' => $module['content'],
-                            'template' => $module['template'] ?? 'default',
-                            'order' => $module['order'] ?? 0,
-                            'directory' => $moduleDirName
-                        ];
-                    }
+                    file_put_contents($modulePath, $moduleContent);
                 }
-            }
-            
-            if (!empty($modules)) {
-                $newFrontmatter['modules'] = $modules;
             }
         }
         
@@ -336,6 +341,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
 
+        <!-- Custom Fields -->
+        <div class="bg-gray-50 p-4 rounded-lg">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-medium text-gray-900">Custom Fields</h2>
+                <button type="button" onclick="addCustomField()" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+                    <i class="fas fa-plus mr-1"></i> Add Field
+                </button>
+            </div>
+            <div id="custom-fields-container" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <?php
+                // Get all frontmatter fields except the standard ones
+                $standardFields = ['title', 'order', 'description', 'keywords', 'author', 'date', 'status', 'featured', 'modules'];
+                $customFields = array_diff_key($frontmatter ?? [], array_flip($standardFields));
+                
+                foreach ($customFields as $key => $value): 
+                ?>
+                    <div class="custom-field-item">
+                        <div class="flex items-start space-x-2">
+                            <div class="flex-grow">
+                                <label class="block text-sm font-medium text-gray-700">Field Name</label>
+                                <input type="text" name="frontmatter[<?php echo htmlspecialchars($key); ?>][key]" 
+                                       value="<?php echo htmlspecialchars($key); ?>"
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            </div>
+                            <div class="flex-grow">
+                                <label class="block text-sm font-medium text-gray-700">Value</label>
+                                <input type="text" name="frontmatter[<?php echo htmlspecialchars($key); ?>][value]" 
+                                       value="<?php echo htmlspecialchars($value); ?>"
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            </div>
+                            <button type="button" onclick="removeCustomField(this)" class="mt-6 text-red-600 hover:text-red-900">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+
         <!-- Main Content -->
         <div class="mb-6">
             <label for="main-content" class="block text-sm font-medium text-gray-700">Content</label>
@@ -364,6 +408,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="w-full">
                                 <h4 class="text-md font-medium text-gray-900"><?php echo htmlspecialchars($module['title']); ?></h4>
 
+                                <!-- Add title input -->
+                                <input type="hidden" name="modules[<?php echo htmlspecialchars($module['directory']); ?>][title]" 
+                                       value="<?php echo htmlspecialchars($module['title']); ?>">
+                                
+                                <!-- Add template input -->
+                                <input type="hidden" name="modules[<?php echo htmlspecialchars($module['directory']); ?>][template]" 
+                                       value="<?php echo htmlspecialchars($module['template']); ?>">
+                                
+                                <!-- Add order input -->
+                                <input type="hidden" name="modules[<?php echo htmlspecialchars($module['directory']); ?>][order]" 
+                                       value="<?php echo htmlspecialchars($module['order']); ?>">
+
                                 <!-- Main Content -->
                                 <div class="w-full">
                                     <label for="module-content-<?php echo htmlspecialchars($module['directory']); ?>" class="block text-sm font-medium text-gray-700">Content</label>
@@ -371,6 +427,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                               id="module-content-<?php echo htmlspecialchars($module['directory']); ?>" 
                                               rows="10" 
                                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"><?php echo htmlspecialchars($module['content']); ?></textarea>
+                                </div>
+
+                                <!-- Custom Fields Section -->
+                                <div class="w-full mt-4">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <h4 class="text-sm font-medium text-gray-700">Custom Fields</h4>
+                                        <button type="button" onclick="addSiblingModuleCustomField(this)" class="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+                                            <i class="fas fa-plus mr-1"></i> Add Field
+                                        </button>
+                                    </div>
+                                    <div class="module-custom-fields-container space-y-2">
+                                        <?php
+                                        // Get all module frontmatter fields except the standard ones
+                                        $moduleStandardFields = ['title', 'template', 'type', 'order', 'content', 'path', 'directory'];
+                                        $moduleCustomFields = array_diff_key($module['frontmatter'] ?? [], array_flip($moduleStandardFields));
+                                        
+                                        foreach ($moduleCustomFields as $key => $value): 
+                                        ?>
+                                            <div class="module-custom-field-item bg-white p-2 rounded-lg border border-gray-200">
+                                                <div class="flex items-start space-x-2">
+                                                    <div class="flex-grow">
+                                                        <label class="block text-xs font-medium text-gray-700">Field Name</label>
+                                                        <input type="text" name="modules[<?php echo htmlspecialchars($module['directory']); ?>][frontmatter][<?php echo htmlspecialchars($key); ?>][key]" 
+                                                               value="<?php echo htmlspecialchars($key); ?>"
+                                                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs">
+                                                    </div>
+                                                    <div class="flex-grow">
+                                                        <label class="block text-xs font-medium text-gray-700">Value</label>
+                                                        <input type="text" name="modules[<?php echo htmlspecialchars($module['directory']); ?>][frontmatter][<?php echo htmlspecialchars($key); ?>][value]" 
+                                                               value="<?php echo htmlspecialchars($value); ?>"
+                                                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs">
+                                                    </div>
+                                                    <button type="button" onclick="removeModuleCustomField(this)" class="mt-6 text-red-600 hover:text-red-900">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
                                 </div>
 
                                 <p class="text-sm text-gray-500">Directory: _<?php echo htmlspecialchars($module['directory']); ?></p>
@@ -433,11 +528,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                             </div>
                             <div class="w-full">
+                                <label class="block text-sm font-medium text-gray-700">Description</label>
+                                <textarea name="modules[<?php echo $index; ?>][description]" 
+                                          rows="2"
+                                          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"><?php echo htmlspecialchars($module['description'] ?? ''); ?></textarea>
+                            </div>
+                            <div class="w-full">
+                                <label class="block text-sm font-medium text-gray-700">Status</label>
+                                <select name="modules[<?php echo $index; ?>][status]" 
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                    <option value="active" <?php echo ($module['status'] ?? '') === 'active' ? 'selected' : ''; ?>>Active</option>
+                                    <option value="inactive" <?php echo ($module['status'] ?? '') === 'inactive' ? 'selected' : ''; ?>>Inactive</option>
+                                </select>
+                            </div>
+                            <div class="w-full">
                                 <label for="inline-module-content-<?php echo $index; ?>" class="block text-sm font-medium text-gray-700">Content</label>
                                 <textarea name="modules[<?php echo $index; ?>][content]" 
                                           id="inline-module-content-<?php echo $index; ?>" 
                                           rows="4"
                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"><?php echo htmlspecialchars($module['content']); ?></textarea>
+                            </div>
+                            <div class="w-full">
+                                <div class="flex justify-between items-center mb-2">
+                                    <h4 class="text-sm font-medium text-gray-700">Custom Fields</h4>
+                                    <button type="button" onclick="addModuleCustomField(this)" class="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+                                        <i class="fas fa-plus mr-1"></i> Add Field
+                                    </button>
+                                </div>
+                                <div class="module-custom-fields-container space-y-2">
+                                    <?php
+                                    // Get all module frontmatter fields except the standard ones
+                                    $moduleStandardFields = ['title', 'template', 'type', 'order', 'content', 'path', 'directory'];
+                                    $moduleCustomFields = array_diff_key($module['frontmatter'] ?? [], array_flip($moduleStandardFields));
+                                    
+                                    foreach ($moduleCustomFields as $key => $value): 
+                                    ?>
+                                        <div class="module-custom-field-item bg-white p-2 rounded-lg border border-gray-200">
+                                            <div class="flex items-start space-x-2">
+                                                <div class="flex-grow">
+                                                    <label class="block text-xs font-medium text-gray-700">Field Name</label>
+                                                    <input type="text" name="modules[<?php echo $index; ?>][frontmatter][<?php echo htmlspecialchars($key); ?>][key]" 
+                                                           value="<?php echo htmlspecialchars($key); ?>"
+                                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs">
+                                                </div>
+                                                <div class="flex-grow">
+                                                    <label class="block text-xs font-medium text-gray-700">Value</label>
+                                                    <input type="text" name="modules[<?php echo $index; ?>][frontmatter][<?php echo htmlspecialchars($key); ?>][value]" 
+                                                           value="<?php echo htmlspecialchars($value); ?>"
+                                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs">
+                                                </div>
+                                                <button type="button" onclick="removeModuleCustomField(this)" class="mt-6 text-red-600 hover:text-red-900">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -590,9 +736,32 @@ function addModule() {
                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                 </div>
                 <div>
+                    <label class="block text-sm font-medium text-gray-700">Description</label>
+                    <textarea name="modules[${moduleCount}][description]" rows="2"
+                              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Status</label>
+                    <select name="modules[${moduleCount}][status]" 
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </div>
+                <div>
                     <label for="inline-module-content-${moduleCount}" class="block text-sm font-medium text-gray-700">Content</label>
                     <textarea id="${moduleId}" name="modules[${moduleCount}][content]" rows="4"
                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
+                </div>
+                <div class="w-full">
+                    <div class="flex justify-between items-center mb-2">
+                        <h4 class="text-sm font-medium text-gray-700">Custom Fields</h4>
+                        <button type="button" onclick="addModuleCustomField(this)" class="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+                            <i class="fas fa-plus mr-1"></i> Add Field
+                        </button>
+                    </div>
+                    <div class="module-custom-fields-container space-y-2">
+                    </div>
                 </div>
             </div>
         </div>
@@ -632,47 +801,105 @@ function removeModule(button) {
         const modules = document.querySelectorAll('.module-item');
         modules.forEach((module, index) => {
             module.querySelector('h3').textContent = `Module ${index + 1}`;
-            module.querySelectorAll('[name^="modules["]').forEach(input => {
-                input.name = input.name.replace(/modules\[\d+\]/, `modules[${index}]`);
-            });
         });
     }
 }
 
-function deleteModule(moduleDir) {
-    if (confirm('Are you sure you want to delete this module? This will permanently delete the module directory and all its contents.')) {
-        fetch('delete_module.php', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                module_dir: moduleDir,
-                parent_path: '<?php echo $pagePath; ?>'
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                window.location.reload();
-            } else {
-                console.log(data);
-                alert('Error deleting module: ' + data.message);
-            }
-        })
-        .catch(error => {
-            alert('Error deleting module: ' + error);
-        });
-    }
-}
-
-function saveModules() {
-    // Get the form element
-    const form = document.getElementById('edit-form');
+function addSiblingModuleCustomField(button) {
+    let container = button.closest('.module-custom-fields-container');
     
-    // Submit the form with the correct action
-    form.submit();
+    // If container doesn't exist, create it
+    if (!container) {
+        const moduleItem = button.closest('.module-item');
+        if (!moduleItem) {
+            console.error('Could not find module-item');
+            return;
+        }
+        
+        // Create the container
+        container = document.createElement('div');
+        container.className = 'module-custom-fields-container space-y-2';
+        
+        // Insert it after the button's parent div
+        const buttonParent = button.parentElement;
+        buttonParent.insertAdjacentElement('afterend', container);
+    }
+
+    const moduleItem = container.closest('.module-item');
+    if (!moduleItem) {
+        console.error('Could not find module-item');
+        return;
+    }
+
+    // Try to find the module directory from the content input or any other input
+    const contentInput = moduleItem.querySelector('textarea[name*="[content]"]');
+    let moduleDirectory = 'new_field';
+    
+    if (contentInput) {
+        const match = contentInput.name.match(/modules\[([^\]]+)\]/);
+        if (match && match[1]) {
+            moduleDirectory = match[1];
+        }
+    }
+
+    // Generate a unique field name
+    const fieldCount = container.children.length;
+    const uniqueFieldName = `custom_field_${fieldCount}`;
+
+    const fieldHtml = `
+        <div class="module-custom-field-item bg-white p-2 rounded-lg border border-gray-200">
+            <div class="flex items-start space-x-2">
+                <div class="flex-grow">
+                    <label class="block text-xs font-medium text-gray-700">Field Name</label>
+                    <input type="text" name="modules[${moduleDirectory}][frontmatter][${uniqueFieldName}][key]" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs">
+                </div>
+                <div class="flex-grow">
+                    <label class="block text-xs font-medium text-gray-700">Value</label>
+                    <input type="text" name="modules[${moduleDirectory}][frontmatter][${uniqueFieldName}][value]" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs">
+                </div>
+                <button type="button" onclick="removeModuleCustomField(this)" class="mt-6 text-red-600 hover:text-red-900">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    
+    container.insertAdjacentHTML('beforeend', fieldHtml);
+}
+
+function addCustomField() {
+    const container = document.getElementById('custom-fields-container');
+    const fieldCount = container.children.length;
+    
+    const fieldHtml = `
+        <div class="custom-field-item">
+            <div class="flex items-start space-x-2">
+                <div class="flex-grow">
+                    <label class="block text-sm font-medium text-gray-700">Field Name</label>
+                    <input type="text" name="frontmatter[new_field_${fieldCount}][key]" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                </div>
+                <div class="flex-grow">
+                    <label class="block text-sm font-medium text-gray-700">Value</label>
+                    <input type="text" name="frontmatter[new_field_${fieldCount}][value]" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                </div>
+                <button type="button" onclick="removeCustomField(this)" class="mt-6 text-red-600 hover:text-red-900">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    
+    container.insertAdjacentHTML('beforeend', fieldHtml);
+}
+
+function removeCustomField(button) {
+    const fieldItem = button.closest('.custom-field-item');
+    fieldItem.remove();
 }
 </script>
-
-<?php require_once __DIR__ . '/../includes/footer.php'; ?> 
+</body>
+</html>

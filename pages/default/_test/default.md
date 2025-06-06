@@ -1,10 +1,9 @@
 ---
-title: testing
+title: test
 template: default
 type: module
 order: 0
-hello: test
-test: testinmg
+testing: testing
 ---
 
 testing
