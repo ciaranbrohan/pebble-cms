@@ -123,24 +123,12 @@ if (empty($uri)) {
                 $pagePath = str_replace('/default.md', '', $relativePath);
                 
                 if (!empty($pagePath)) {
-                    // Extract the numeric prefix (up to 4 digits)
-                    if (preg_match('/^(\d{1,4})\./', $pagePath, $matches)) {
-                        $order = (int)$matches[1];
-                        // Remove the numeric prefix for the URL
-                        $cleanPath = preg_replace('/^\d{1,4}\./', '', $pagePath);
-                        $pagesWithOrder[] = [
-                            'order' => $order,
-                            'path' => $cleanPath,
-                            'original_path' => $pagePath
-                        ];
-                    } else {
-                        // If no numeric prefix, add with high order number
-                        $pagesWithOrder[] = [
-                            'order' => 9999,
-                            'path' => $pagePath,
-                            'original_path' => $pagePath
-                        ];
-                    }
+                    // No need to extract numeric prefix anymore
+                    $pagesWithOrder[] = [
+                        'order' => 9999, // Default order for sorting
+                        'path' => $pagePath,
+                        'original_path' => $pagePath
+                    ];
                 }
             }
         }
@@ -230,24 +218,12 @@ if (is_dir($dirPath)) {
             $pagePath = str_replace('/default.md', '', $relativePath);
             
             if (!empty($pagePath)) {
-                // Extract the numeric prefix (up to 4 digits)
-                if (preg_match('/^(\d{1,4})\./', $pagePath, $matches)) {
-                    $order = (int)$matches[1];
-                    // Remove the numeric prefix for the URL
-                    $cleanPath = preg_replace('/^\d{1,4}\./', '', $pagePath);
-                    $pagesWithOrder[] = [
-                        'order' => $order,
-                        'path' => $cleanPath,
-                        'original_path' => $pagePath
-                    ];
-                } else {
-                    // If no numeric prefix, add with high order number
-                    $pagesWithOrder[] = [
-                        'order' => 9999,
-                        'path' => $pagePath,
-                        'original_path' => $pagePath
-                    ];
-                }
+                // No need to extract numeric prefix anymore
+                $pagesWithOrder[] = [
+                    'order' => 9999, // Default order for sorting
+                    'path' => $pagePath,
+                    'original_path' => $pagePath
+                ];
             }
         }
     }

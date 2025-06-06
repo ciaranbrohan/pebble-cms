@@ -1,9 +1,6 @@
 ---
 title: "Welcome to Our Site"
-template: modular
-menu: Home
-type: page
-order: 9999
+order: 0
 ---
 
 # Welcome to Our Siteefefefeegege

@@ -39,14 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             return preg_replace('/[^a-z0-9-]/', '-', strtolower($part));
         }, $pathParts);
         
-        // Format order as 2-digit prefix
-        $orderPrefix = sprintf('%02d', $order);
-        
-        // Add order prefix to the first part of the path if it doesn't already have one
-        if (!empty($pathParts) && !preg_match('/^\d{2}\./', $pathParts[0])) {
-            $pathParts[0] = $orderPrefix . '.' . $pathParts[0];
-        }
-        
+        // Remove order prefix formatting
         $cleanPath = implode('/', $pathParts);
         
         // Construct the full path
@@ -162,34 +155,13 @@ $templates = array_map(function($template) {
                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                 </div>
                 <div>
-                    <label for="template" class="block text-sm font-medium text-gray-700">Template</label>
-                    <select name="template" id="template" 
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                        <?php foreach ($templates as $template): ?>
-                            <option value="<?php echo htmlspecialchars($template); ?>"
-                                    <?php echo $template === 'default' ? 'selected' : ''; ?>>
-                                <?php echo htmlspecialchars($template); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div>
-                    <label for="type" class="block text-sm font-medium text-gray-700">Page Type</label>
-                    <select name="type" id="type" 
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                            onchange="toggleModuleFields(this.value)">
-                        <option value="page">Standard Page</option>
-                        <option value="module">Module</option>
-                    </select>
-                </div>
-                <div>
                     <label for="order" class="block text-sm font-medium text-gray-700">Order</label>
                     <input type="number" name="order" id="order" value="0"
                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                 </div>
                 <div>
-                    <label for="directory" class="block text-sm font-medium text-gray-700">Directory</label>
-                    <select name="directory" id="directory" required
+                    <label for="site" class="block text-sm font-medium text-gray-700">Site</label>
+                    <select name="site" id="site" required
                             class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                         <?php
                         $dirs = array_filter(glob(ROOT_DIR . '/pages/*'), 'is_dir');

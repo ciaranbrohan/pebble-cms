@@ -26,6 +26,10 @@ if (!isset($_GET['path'])) {
 $pagePath = $_GET['path'];
 $fullPath = ROOT_DIR . '/pages/' . $pagePath;
 
+// Add this code to determine the site
+$pathParts = explode('/', $pagePath);
+$site = $pathParts[0]; // The first part of the path is the site name
+
 // Validate file exists and is readable
 if (!file_exists($fullPath) || !is_readable($fullPath)) {
     $_SESSION['flash_message'] = 'Page not found or not accessible';
@@ -75,12 +79,111 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newContent = $_POST['content'];
         $newFrontmatter = [];
         
+        // Validate required fields
+        if (empty($_POST['frontmatter']['title'])) {
+            $_SESSION['flash_message'] = 'Title is required';
+            $_SESSION['flash_type'] = 'error';
+            header('Location: edit_page.php?path=' . urlencode($pagePath));
+            exit;
+        }
+        
+        if (!isset($_POST['frontmatter']['order'])) {
+            $_SESSION['flash_message'] = 'Order is required';
+            $_SESSION['flash_type'] = 'error';
+            header('Location: edit_page.php?path=' . urlencode($pagePath));
+            exit;
+        }
+        
+        // Handle path change if provided
+        if (!empty($_POST['path'])) {
+            // Clean and validate new path
+            $newPath = trim($_POST['path'], '/');
+            $pathParts = explode('/', $newPath);
+            $pathParts = array_map(function($part) {
+                return preg_replace('/[^a-z0-9-]/', '-', strtolower($part));
+            }, $pathParts);
+            
+            // Add site name back to the path
+            $cleanPath = $site . '/' . implode('/', $pathParts);
+            
+            // Add default.md if it's not already there
+            if (strpos($cleanPath, '/default.md') === false) {
+                $cleanPath .= '/default.md';
+            }
+            
+            $newFullPath = ROOT_DIR . '/pages/' . $cleanPath;
+            
+            // Validate new path
+            if (file_exists($newFullPath)) {
+                $_SESSION['flash_message'] = 'A page already exists at this path';
+                $_SESSION['flash_type'] = 'error';
+                header('Location: edit_page.php?path=' . urlencode($pagePath));
+                exit;
+            }
+            
+            // Create new directory if it doesn't exist
+            $newDir = dirname($newFullPath);
+            if (!is_dir($newDir)) {
+                if (!mkdir($newDir, 0755, true)) {
+                    $_SESSION['flash_message'] = 'Error creating new directory';
+                    $_SESSION['flash_type'] = 'error';
+                    header('Location: edit_page.php?path=' . urlencode($pagePath));
+                    exit;
+                }
+            }
+            
+            // Move the file
+            if (!rename($fullPath, $newFullPath)) {
+                $_SESSION['flash_message'] = 'Error moving page to new location';
+                $_SESSION['flash_type'] = 'error';
+                header('Location: edit_page.php?path=' . urlencode($pagePath));
+                exit;
+            }
+            
+            // Update paths for modules if they exist
+            $oldModuleDir = dirname($fullPath);
+            $newModuleDir = dirname($newFullPath);
+            $moduleDirs = glob($oldModuleDir . '/_*', GLOB_ONLYDIR);
+            
+            foreach ($moduleDirs as $moduleDir) {
+                $moduleName = basename($moduleDir);
+                $newModulePath = $newModuleDir . '/' . $moduleName;
+                
+                if (!is_dir($newModulePath)) {
+                    mkdir($newModulePath, 0755, true);
+                }
+                
+                $moduleFile = $moduleDir . '/default.md';
+                $newModuleFile = $newModulePath . '/default.md';
+                
+                if (file_exists($moduleFile)) {
+                    rename($moduleFile, $newModuleFile);
+                }
+            }
+            
+            // Clean up old directory if it's empty
+            if (is_dir($oldModuleDir)) {
+                $files = glob($oldModuleDir . '/*');
+                if (empty($files)) {
+                    rmdir($oldModuleDir);
+                }
+            }
+            
+            // Update the paths
+            $fullPath = $newFullPath;
+            $pagePath = $cleanPath;
+        }
+        
         // Process frontmatter fields
         foreach ($_POST['frontmatter'] as $key => $value) {
             if (!empty($value)) {
                 $newFrontmatter[$key] = $value;
             }
         }
+        
+        // Ensure required fields are always present
+        $newFrontmatter['title'] = $_POST['frontmatter']['title'];
+        $newFrontmatter['order'] = (int)$_POST['frontmatter']['order'];
         
         // Handle modules if this is a modular page
         if (isset($_POST['modules']) && is_array($_POST['modules'])) {
@@ -138,14 +241,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $fileContent .= $newContent;
         
         // Save the file
-        if (file_put_contents($fullPath, $fileContent)) {
+        if (!is_writable(dirname($fullPath))) {
+            $_SESSION['flash_message'] = 'Error: Directory is not writable. Please check permissions.';
+            $_SESSION['flash_type'] = 'error';
+            error_log("Directory not writable: " . dirname($fullPath));
+        } else if (file_exists($fullPath) && !is_writable($fullPath)) {
+            $_SESSION['flash_message'] = 'Error: File is not writable. Please check permissions.';
+            $_SESSION['flash_type'] = 'error';
+            error_log("File not writable: " . $fullPath);
+        } else if (file_put_contents($fullPath, $fileContent)) {
             $_SESSION['flash_message'] = 'Page saved successfully';
             $_SESSION['flash_type'] = 'success';
             header('Location: edit_page.php?path=' . urlencode($pagePath));
             exit;
         } else {
-            $_SESSION['flash_message'] = 'Error saving page';
+            $_SESSION['flash_message'] = 'Error saving page: ' . error_get_last()['message'];
             $_SESSION['flash_type'] = 'error';
+            error_log("Error saving file: " . error_get_last()['message']);
         }
     }
 }
@@ -190,35 +302,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                            value="<?php echo htmlspecialchars($frontmatter['title'] ?? ''); ?>"
                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                 </div>
-                <div>
-                    <label for="frontmatter[template]" class="block text-sm font-medium text-gray-700">Template</label>
-                    <input type="text" name="frontmatter[template]" id="frontmatter[template]" 
-                           value="<?php echo htmlspecialchars($frontmatter['template'] ?? 'default'); ?>"
-                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                </div>
-                <div>
-                    <label for="frontmatter[menu]" class="block text-sm font-medium text-gray-700">Menu Label</label>
-                    <input type="text" name="frontmatter[menu]" id="frontmatter[menu]" 
-                           value="<?php echo htmlspecialchars($frontmatter['menu'] ?? ''); ?>"
-                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                </div>
-                <div>
-                    <label for="frontmatter[type]" class="block text-sm font-medium text-gray-700">Page Type</label>
-                    <select name="frontmatter[type]" id="frontmatter[type]" 
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                            onchange="toggleModuleFields(this.value)">
-                        <option value="page" <?php echo !$isModule ? 'selected' : ''; ?>>Standard Page</option>
-                        <option value="module" <?php echo $isModule ? 'selected' : ''; ?>>Module</option>
-                    </select>
-                </div>
+
                 <div>
                     <label for="frontmatter[order]" class="block text-sm font-medium text-gray-700">Order</label>
                     <input type="number" name="frontmatter[order]" id="frontmatter[order]" 
                            value="<?php echo htmlspecialchars($frontmatter['order'] ?? '0'); ?>"
                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                 </div>
-            </div>
-        </div>
+            
+                <div class="sm:col-span-2">
+                    <label for="path" class="block text-sm font-medium text-gray-700">Page Path</label>
+                    <div class="mt-1 flex rounded-md shadow-sm">
+                        <span class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm">
+                            <?php echo htmlspecialchars($site); ?>/
+                        </span>
+                        <input type="text" name="path" id="path" 
+                               value="<?php 
+                                    // Strip site name and default.md from the path
+                                    $displayPath = $pagePath;
+                                    if (strpos($displayPath, $site . '/') === 0) {
+                                        $displayPath = substr($displayPath, strlen($site . '/'));
+                                    }
+                                    if (strpos($displayPath, '/default.md') !== false) {
+                                        $displayPath = str_replace('/default.md', '', $displayPath);
+                                    }
+                                    echo htmlspecialchars($displayPath);
+                               ?>"
+                               class="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                    </div>
+                </div>
 
         <!-- Main Content -->
         <div>

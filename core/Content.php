@@ -27,8 +27,20 @@ class Content {
         if (preg_match('/^---\s*\n(.*?)\n---\s*\n(.*)/s', $this->raw, $matches)) {
             $this->frontmatter = YamlParser::parse($matches[1]);
             $this->content = $matches[2];
+            
+            // Ensure required fields are present
+            if (!isset($this->frontmatter['title'])) {
+                $this->frontmatter['title'] = basename(dirname($this->filePath));
+            }
+            if (!isset($this->frontmatter['order'])) {
+                $this->frontmatter['order'] = 9999;
+            }
         } else {
-            $this->frontmatter = [];
+            // If no frontmatter, create default with required fields
+            $this->frontmatter = [
+                'title' => basename(dirname($this->filePath)),
+                'order' => 9999
+            ];
             $this->content = $this->raw;
         }
     }
